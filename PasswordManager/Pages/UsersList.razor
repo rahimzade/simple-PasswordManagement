@@ -1,0 +1,152 @@
+﻿@page "/users-list"
+@using AutoMapper
+@using PasswordManager.Data
+@using PasswordManager.Models
+@using PasswordManager.Services
+@using PasswordManager.Services.interfaces
+
+@inject NavigationManager NavManager
+@inject IJSRuntime JSRuntime
+@inject UserStateService userStateService
+@implements IDisposable
+
+@inherits OwningComponentBase<IUserService>
+
+<PageTitle>Registered Users</PageTitle>
+
+
+<h1>Registered Users</h1>
+
+@if (IsLoggin == false)
+{
+    <h2>Please Sign In!</h2>
+}
+else
+{
+    @if (users == null)
+    {
+        <p><em>Loading...</em></p>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Fmaily</th>
+                    <th>User Name</th>
+                    <th>User Type</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var user in users)
+                {
+                    <tr>
+                        <td>@user.Name</td>
+                        <td>@user.Family</td>
+                        <td>@user.UserName</td>
+                        <td>
+                            @if (@user.UserType == AccountType.User)
+                            {
+                                <span> User</span>
+                            }
+                            else
+                            {
+                                <span>Administrator </span>
+                            }
+                        </td>
+                        <td>
+                            <button @onclick="() => Update(user.Id)" class="btn btn-primary" type="button">Edit</button>
+                            <button @onclick="() => Delete(user.Id,user.UserName)" class="btn btn-danger" type="button">Delete</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    private List<UserDto> users = new List<UserDto>();
+
+    [Inject]
+    public IMapper _mapper { get; set; }
+
+    private CancellationTokenSource _cts = new();
+
+    private bool IsLoggin = false;
+
+    public async Task OnSignin()
+    {
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                IsLoggin = userStateService.userInfo != null;
+
+                StateHasChanged();
+            });
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex.Message);
+            throw;
+        }
+    }
+
+
+    protected override async void OnInitialized()
+    {
+        await OnSignin();
+        userStateService.Event += OnSignin;
+
+    }
+
+
+    public void Dispose()
+    {
+        userStateService.Event -= OnSignin;
+    }
+
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var LoadUsers = await Service.GetAll(_cts.Token);
+
+            users = _mapper.Map<List<UserDto>>(LoadUsers);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex.Message);
+            throw;
+        }
+    }
+
+    void Update(int userId)
+    {
+        NavManager.NavigateTo("/update/" + userId);
+    }
+
+    async Task Delete(int userId, string name)
+    {
+        try
+        {
+            if (!await JSRuntime.InvokeAsync<bool>("confirm", $"Are you sure you want to delete the User: '{name}'?"))
+                return;
+
+            var result = await Service.Delete(userId, _cts.Token);
+
+            var LoadUsers = await Service.GetAll(_cts.Token);
+            users = _mapper.Map<List<UserDto>>(LoadUsers);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex.Message);
+            throw;
+        }
+    }
+}

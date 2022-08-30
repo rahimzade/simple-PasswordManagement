@@ -1,0 +1,150 @@
+﻿@page "/"
+@using AutoMapper
+@using PasswordManager.Models
+@using PasswordManager.Services
+@using PasswordManager.Services.interfaces
+@inject UserStateService userStateService
+@implements IDisposable
+
+@inherits OwningComponentBase<IUserService>
+
+
+
+<PageTitle>Password Manager</PageTitle>
+
+@if (IsLoggin == true)
+{
+    <h1>Hi, @userDto.Name</h1>
+    <p>Your Password is : @userDto.Password</p>
+    <br />
+    <button @onclick="exit" class="btn btn-primary mt-2" type="button">Exit</button>
+}
+else
+{
+    <div class="d-flex justify-content-center align-items-center">
+        <EditForm Model="@signinModel" OnValidSubmit="@signin">
+            <DataAnnotationsValidator />
+
+            <div class="login-panel shadow p-4 m-4">
+                <div class="d-flex flex-column justify-content-center my-3">
+                    <h3>SignIn</h3>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">User Name</label>
+                    <InputText @bind-Value="signinModel.UserName" class="form-control"></InputText>
+                    <ValidationMessage For="@(()=> signinModel.UserName)" />
+                </div>
+
+                <div class="mb-4">
+                    <label class="form-label">Password</label>
+                    <InputText type="password" @bind-Value="signinModel.Password" class="form-control"></InputText>
+                    <ValidationMessage For="@(()=> signinModel.Password)" />
+
+                </div>
+
+                @if (IsWrongPassword == true)
+                {
+                    <div class="alert alert-danger">
+                        Wrong Password!
+                        <br>
+                        Please Try Again.
+                    </div>
+                }
+
+                <div class="d-grid">
+                    <button class="btn btn-primary" type="submit">Sign In</button>
+                </div>
+            </div>
+        </EditForm>
+    </div>
+}
+
+
+@code {
+    [Parameter]
+    public bool IsLoggin { get; set; } = false;
+    [Parameter]
+    public bool IsWrongPassword { get; set; } = false;
+
+    [Inject]
+    public IMapper _mapper { get; set; }
+
+
+    private CancellationTokenSource _cts = new();
+
+    UserDto userDto = new UserDto();
+    SigninModel signinModel = new SigninModel();
+
+    public async Task OnSignin()
+    {
+        try
+        {
+            await InvokeAsync(() =>
+                   {
+                       userDto = userStateService.userInfo;
+                       IsLoggin = userDto != null;
+
+                       StateHasChanged();
+                   });
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex.Message);
+            throw;
+        }
+
+    }
+
+
+    protected override async void OnInitialized()
+    {
+        try
+        {
+            await OnSignin();
+            userStateService.Event += OnSignin;
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex.Message);
+            throw;
+        }
+    }
+
+
+    public void Dispose()
+    {
+        userStateService.Event -= OnSignin;
+    }
+
+    protected async Task signin()
+    {
+        try
+        {
+            IsWrongPassword = false;
+            var result = await Service.Signin(signinModel.UserName, signinModel.Password, _cts.Token);
+            if (result != null)
+            {
+                userDto = _mapper.Map<UserDto>(result);
+                await userStateService.Add(userDto);
+            }
+            else
+            {
+                IsWrongPassword = true;
+                signinModel.Password = "";
+            }
+            IsLoggin = result != null;
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex.Message);
+            throw;
+        }
+    }
+
+    async void exit()
+    {
+        await userStateService.Clear();
+        IsLoggin = false;
+    }
+
+}

@@ -1,0 +1,234 @@
+﻿@page "/create"
+@page "/update/{UserId:int}"
+@using AutoMapper
+@using PasswordManager.Models
+@using PasswordManager.Services
+@using PasswordManager.Services.interfaces
+
+@inject NavigationManager NavManager
+@inject UserStateService userStateService
+@implements IDisposable
+
+@inherits OwningComponentBase<IUserService>
+
+
+<PageTitle>
+    @if (UserId > 0)
+    {
+        <span>Update User</span>
+    }
+    else
+    {
+        <span>Register User</span>
+    }
+  </PageTitle>
+
+@if (IsLoggin == false)
+{
+    <h2>Please Sign In!</h2>
+}
+else
+{
+    @if (WrongUser == true)
+    {
+        <div class="alert alert-danger">
+            Can Not Find This User!
+            <br>
+            Please Change This.
+        </div>
+    }
+    else
+    {
+        <div class="d-flex justify-content-center align-items-center">
+            <EditForm Model="@userDto" OnValidSubmit="@register">
+                <DataAnnotationsValidator />
+
+                <div class="login-panel shadow p-4 m-4">
+                    <div class="d-flex flex-column justify-content-center my-3">
+                        @if (UserId > 0)
+                        {
+                            <h3>Update User</h3>
+                        }
+                        else
+                        {
+                            <h3>Register User</h3>
+                        }
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Name</label>
+                        <InputText @bind-Value="userDto.Name" class="form-control"></InputText>
+                        <ValidationMessage For="@(()=> userDto.Name)" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Family</label>
+                        <InputText @bind-Value="userDto.Family" class="form-control"></InputText>
+                        <ValidationMessage For="@(()=> userDto.Family)" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">User Name</label>
+                        <InputText @bind-Value="userDto.UserName" class="form-control"></InputText>
+                        <ValidationMessage For="@(()=> userDto.UserName)" />
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label">Password</label>
+                        <InputText type="password" @bind-Value="userDto.Password" class="form-control"></InputText>
+                        <ValidationMessage For="@(()=> userDto.Password)" />
+
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">User Type</label>
+                        <InputRadioGroup @bind-Value="@userDto.UserType">
+                            <InputRadio Value="AccountType.User" />
+                            User
+                            <br>
+                            <InputRadio Value="AccountType.Admin" />
+                            Administrator
+                        </InputRadioGroup>
+
+                        <ValidationMessage For="@(()=> userDto.UserType)" />
+                    </div>
+
+                    @if (IsFaild == true)
+                    {
+                        <div class="alert alert-danger">
+                            Faild Operation!
+                            <br>
+                            Please Try Again.
+                        </div>
+                    }
+
+                    <div class="d-grid">
+                        <button class="btn btn-primary" type="submit">
+                            @if (UserId > 0)
+                            {
+                                <span>Save</span>
+                            }
+                            else
+                            {
+                                <span>Register</span>
+                            }
+                        </button>
+                    </div>
+                </div>
+            </EditForm>
+        </div>
+    }
+}
+
+
+@code {
+    [Parameter]
+    public int UserId { get; set; }
+
+    private UserDto userDto = new UserDto();
+    [Inject]
+    public IMapper _mapper { get; set; }
+
+    private CancellationTokenSource _cts = new();
+
+    private bool IsLoggin = false;
+    private bool IsFaild = false;
+    private bool WrongUser = false;
+
+
+    public async Task OnSignin()
+    {
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                IsLoggin = userStateService.userInfo != null;
+
+                StateHasChanged();
+            });
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex.Message);
+            throw;
+        }
+    }
+
+
+    protected override async void OnInitialized()
+    {
+        try
+        {
+            await OnSignin();
+            userStateService.Event += OnSignin;
+
+            WrongUser = false;
+            if (UserId > 0)
+            {
+                var user = await Service.GetById(UserId, _cts.Token);
+
+                if (user != null)
+                {
+                    userDto = _mapper.Map<UserDto>(user);
+                }
+                else
+                {
+                    WrongUser = true;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex.Message);
+            throw;
+        }
+    }
+
+
+    public void Dispose()
+    {
+        userStateService.Event -= OnSignin;
+    }
+
+
+    protected async Task register()
+    {
+        try
+        {
+            IsFaild = false;
+
+            var user = _mapper.Map<User>(userDto);
+            user.Id = 0;
+
+            if (UserId > 0)
+            {
+                var result = await Service.Update(UserId, user, _cts.Token);
+                if (result == true)
+                {
+                    NavManager.NavigateTo("/users-list");
+                }
+                else
+                {
+                    IsFaild = true;
+                }
+            }
+            else
+            {
+                var result = await Service.Add(user, _cts.Token);
+                if (result != null)
+                {
+                    NavManager.NavigateTo("/users-list");
+                }
+                else
+                {
+                    IsFaild = true;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex.Message);
+            throw;
+        }
+
+    }
+}
